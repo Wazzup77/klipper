@@ -72,6 +72,9 @@ class AHTBase:
         self.i2c.i2c_write(CMD_RESET)
         self.reactor.pause(self.reactor.monotonic() + 0.020)
 
+    def _first_read_wait(self):
+        raise NotImplementedError("Subclass must implement _first_read_wait")
+
     def _make_measurement(self):
         if not self.init_sent:
             return False
@@ -97,7 +100,7 @@ class AHTBase:
                 # Write command for updating temperature+status bit
                 self.i2c.i2c_write(CMD_MEASURE)
                 # Wait 110ms after first read, 75ms minimum
-                self.reactor.pause(self.reactor.monotonic() + .110)
+                self._first_read_wait()
 
                 # Read 6 bytes of data
                 read = self.i2c.i2c_read([], 6)
@@ -177,6 +180,9 @@ class AHT1x(AHTBase):
         self.i2c.i2c_write(CMD_INIT_AHT1X)
         self.reactor.pause(self.reactor.monotonic() + 0.040)
 
+    def _first_read_wait(self):
+        self.reactor.pause(self.reactor.monotonic() + 0.110)
+
 class AHT2x(AHTBase):
     model = "aht2x"
 
@@ -184,12 +190,28 @@ class AHT2x(AHTBase):
         self.i2c.i2c_write(CMD_INIT_AHT2X)
         self.reactor.pause(self.reactor.monotonic() + 0.100)
 
+    def _first_read_wait(self):
+        self.reactor.pause(self.reactor.monotonic() + 0.110)
+
 class AHT3x(AHTBase):
     model = "aht3x"
 
     def _send_init(self):
         # Wait for auto-calibration at power-on
         self.reactor.pause(self.reactor.monotonic() + 0.100)
+
+    def _first_read_wait(self):
+        self.reactor.pause(self.reactor.monotonic() + 0.110)
+
+class AHT20_F(AHTBase):
+    model = "aht20_f"
+
+    def _send_init(self):
+        self.i2c.i2c_write(CMD_INIT_AHT2X)
+        self.reactor.pause(self.reactor.monotonic() + 0.100)
+
+    def _first_read_wait(self):
+        self.reactor.pause(self.reactor.monotonic() + 0.600)
 
 def load_config(config):
     # Register sensor
@@ -201,3 +223,4 @@ def load_config(config):
     pheater.add_sensor_factory("AHT1X", AHT1x)
     pheater.add_sensor_factory("AHT2X", AHT2x)
     pheater.add_sensor_factory("AHT3X", AHT3x)
+    pheater.add_sensor_factory("AHT20_F", AHT20_F)
