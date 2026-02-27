@@ -99,7 +99,7 @@ class AHTBase:
                 cycles += 1
                 # Write command for updating temperature+status bit
                 self.i2c.i2c_write(CMD_MEASURE)
-                # Wait 110ms after first read, 75ms minimum
+                # Wait after first read, 75ms minimum (max depends on sensor)
                 self._first_read_wait()
 
                 # Read 6 bytes of data
