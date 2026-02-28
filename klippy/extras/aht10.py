@@ -11,6 +11,7 @@ from . import bus
 # Compatible Sensors:
 #       AHT10      -    Tested w/ BTT GTR 1.0 MCU on i2c3
 #       AHT20      -    Tested w/ N32G455 on i2c2
+#       AHT20_F    -    Tested w/ Qidi Box on i2c3
 #       AHT21      -    Tested w/ BTT GTR 1.0 MCU on i2c3
 #       AHT30      -    Untested, but should work
 ######################################################################
@@ -28,7 +29,6 @@ STATUS_CALIBRATED = 0x08
 
 MAX_BUSY_CYCLES = 5
 
-
 class AHTBase:
     model = None
     read_count = 6
@@ -44,7 +44,8 @@ class AHTBase:
         self.sample_timer = self.reactor.register_timer(self._sample_aht)
 
         self.printer.add_object("aht10 " + self.name, self)
-        self.printer.register_event_handler("klippy:connect", self.handle_connect)
+        self.printer.register_event_handler("klippy:connect",
+                                                self.handle_connect)
         self.is_calibrated = False
         self.init_sent = False
         self._callback = None
@@ -73,9 +74,6 @@ class AHTBase:
         self.i2c.i2c_write(CMD_RESET)
         self.reactor.pause(self.reactor.monotonic() + 0.020)
 
-    def _first_read_wait(self):
-        raise NotImplementedError("Subclass must implement _first_read_wait")
-
     def _check_crc8(self, data, length):
         raise NotImplementedError("Subclass must implement _check_crc8")
 
@@ -103,8 +101,8 @@ class AHTBase:
                 cycles += 1
                 # Write command for updating temperature+status bit
                 self.i2c.i2c_write(CMD_MEASURE)
-                # Wait after first read, 75ms minimum (max depends on sensor)
-                self.reactor.pause(self.reactor.monotonic() + 0.110)
+                # Wait 110ms after first read, 75ms minimum
+                self.reactor.pause(self.reactor.monotonic() + .110)
 
                 # Read self.read_count bytes of data
                 read = self.i2c.i2c_read([], self.read_count)
@@ -120,7 +118,7 @@ class AHTBase:
                                     % (self.model, self.name, len(data)))
                     continue
 
-                if self.read_count == 7: # AHT20_F case - 6 bytes + 1 byte CRC8
+                if self.read_count == 7: # AHT20_F case - 6 bytes + 1 byte CRC8, so we check CRC
                     if ((data[0] & STATUS_BUSY) == 0) and (
                         data[6] == self._check_crc8(data[:6], 6)
                     ):
@@ -137,7 +135,6 @@ class AHTBase:
         except Exception as e:
             logging.exception("%s %s: exception encountered reading data: %s"
                               % (self.model, self.name, str(e)))
-            self._soft_reset() # reset in case of i2c hangup
             return False
 
         # Parse temperature: 20 bits starting at data[3] (low nibble)
@@ -187,7 +184,6 @@ class AHTBase:
             'humidity': self.humidity,
         }
 
-
 class AHT1x(AHTBase):
     model = "aht1x"
 
@@ -195,14 +191,12 @@ class AHT1x(AHTBase):
         self.i2c.i2c_write(CMD_INIT_AHT1X)
         self.reactor.pause(self.reactor.monotonic() + 0.040)
 
-
 class AHT2x(AHTBase):
     model = "aht2x"
 
     def _send_init(self):
         self.i2c.i2c_write(CMD_INIT_AHT2X)
         self.reactor.pause(self.reactor.monotonic() + 0.100)
-
 
 class AHT3x(AHTBase):
     model = "aht3x"
@@ -215,25 +209,6 @@ class AHT3x(AHTBase):
 class AHT20_F(AHTBase):
     model = "aht20_f"
     read_count = 7
-
-#    def __init__(self, config):
-#        super().__init__(config)
-#        self.report_time = config.getfloat("aht10_report_time", 0.1, minval=0.1)
-#
-#    def _sample_aht(self, eventtime):
-#        self._make_measurement()
-#
-#        if self.temp < self.min_temp or self.temp > self.max_temp:
-#            logging.info(
-#                "%s temperature %.1f outside range of %.1f:%.1f"
-#                % (self.model.upper(), self.temp, self.min_temp, self.max_temp)
-#            )
-#
-#        measured_time = self.reactor.monotonic()
-#        print_time = self.i2c.get_mcu().estimated_print_time(measured_time)
-#        if self._callback is not None:
-#            self._callback(print_time, self.temp)
-#        return measured_time + self.report_time
 
     def _send_init(self):
         self.i2c.i2c_write(CMD_RESET)
