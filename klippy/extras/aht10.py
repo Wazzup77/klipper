@@ -31,7 +31,7 @@ MAX_BUSY_CYCLES = 5
 
 class AHTBase:
     model = None
-    read_count = 6 # 6 bytes for AHTxx, 7 bytes for AHT20_F (CRC8 check)
+    read_count = 6
 
     def __init__(self, config):
         self.printer = config.get_printer()
@@ -39,7 +39,7 @@ class AHTBase:
         self.reactor = self.printer.get_reactor()
         self.i2c = bus.MCU_I2C_from_config(
             config, default_addr=I2C_ADDR, default_speed=100000)
-        self.report_time = config.getint('aht10_report_time', 30, minval=5)
+        self.report_time = config.getfloat('aht10_report_time', 30., minval=0.1)
         self.temp = self.min_temp = self.max_temp = self.humidity = 0.
         self.sample_timer = self.reactor.register_timer(self._sample_aht)
 
@@ -104,7 +104,7 @@ class AHTBase:
                 # Write command for updating temperature+status bit
                 self.i2c.i2c_write(CMD_MEASURE)
                 # Wait after first read, 75ms minimum (max depends on sensor)
-                self._first_read_wait()
+                self.reactor.pause(self.reactor.monotonic() + 0.110)
 
                 # Read self.read_count bytes of data
                 read = self.i2c.i2c_read([], self.read_count)
@@ -120,9 +120,10 @@ class AHTBase:
                                     % (self.model, self.name, len(data)))
                     continue
 
-                if self.read_count == 7: # aht20_f case - 6 bytes + 1 byte CRC8
-                    if ((data[0] & STATUS_BUSY) == 0) and \
-                        (data[6] == self._check_crc8(data[:6], 6)):
+                if self.read_count == 7: # AHT20_F case - 6 bytes + 1 byte CRC8
+                    if ((data[0] & STATUS_BUSY) == 0) and (
+                        data[6] == self._check_crc8(data[:6], 6)
+                    ):
                         is_busy = False
                         self.is_calibrated = bool(data[0] & STATUS_CALIBRATED)
                     else:
@@ -186,6 +187,7 @@ class AHTBase:
             'humidity': self.humidity,
         }
 
+
 class AHT1x(AHTBase):
     model = "aht1x"
 
@@ -193,8 +195,6 @@ class AHT1x(AHTBase):
         self.i2c.i2c_write(CMD_INIT_AHT1X)
         self.reactor.pause(self.reactor.monotonic() + 0.040)
 
-    def _first_read_wait(self):
-        self.reactor.pause(self.reactor.monotonic() + 0.110)
 
 class AHT2x(AHTBase):
     model = "aht2x"
@@ -203,8 +203,6 @@ class AHT2x(AHTBase):
         self.i2c.i2c_write(CMD_INIT_AHT2X)
         self.reactor.pause(self.reactor.monotonic() + 0.100)
 
-    def _first_read_wait(self):
-        self.reactor.pause(self.reactor.monotonic() + 0.110)
 
 class AHT3x(AHTBase):
     model = "aht3x"
@@ -213,19 +211,33 @@ class AHT3x(AHTBase):
         # Wait for auto-calibration at power-on
         self.reactor.pause(self.reactor.monotonic() + 0.100)
 
-    def _first_read_wait(self):
-        self.reactor.pause(self.reactor.monotonic() + 0.110)
 
 class AHT20_F(AHTBase):
     model = "aht20_f"
-    read_count = 7 # 7 bytes for AHT20_F for CRC8 check
+    read_count = 7
+
+#    def __init__(self, config):
+#        super().__init__(config)
+#        self.report_time = config.getfloat("aht10_report_time", 0.1, minval=0.1)
+#
+#    def _sample_aht(self, eventtime):
+#        self._make_measurement()
+#
+#        if self.temp < self.min_temp or self.temp > self.max_temp:
+#            logging.info(
+#                "%s temperature %.1f outside range of %.1f:%.1f"
+#                % (self.model.upper(), self.temp, self.min_temp, self.max_temp)
+#            )
+#
+#        measured_time = self.reactor.monotonic()
+#        print_time = self.i2c.get_mcu().estimated_print_time(measured_time)
+#        if self._callback is not None:
+#            self._callback(print_time, self.temp)
+#        return measured_time + self.report_time
 
     def _send_init(self):
         self.i2c.i2c_write(CMD_RESET)
         self.reactor.pause(self.reactor.monotonic() + 0.100)
-
-    def _first_read_wait(self):
-        self.reactor.pause(self.reactor.monotonic() + 0.600)
 
     def _check_crc8(self, data, length):
         crc = 0xFF
@@ -239,33 +251,6 @@ class AHT20_F(AHTBase):
                 crc &= 0xFF
         return crc
 
-    def _soft_reset(self):
-        logging.info("%s %s: performing full OTP reset" % (self.model, self.name))
-
-        self.i2c.i2c_write(CMD_RESET)
-        self.reactor.pause(self.reactor.monotonic() + 0.100)
-
-        self.i2c.i2c_write([0x1C])  # OTP_CCP
-        self.reactor.pause(self.reactor.monotonic() + 0.100)
-        read = self.i2c.i2c_read([], 3)
-        if read:
-            data = bytearray(read["response"])
-            if len(data) >= 3:
-                self.i2c.i2c_write([0xBC, data[1], data[2]])
-                self.reactor.pause(self.reactor.monotonic() + 0.100)
-
-        self.i2c.i2c_write([0x1B])  # OTP_AFE
-        self.reactor.pause(self.reactor.monotonic() + 0.100)
-        read = self.i2c.i2c_read([], 3)
-        if read:
-            data = bytearray(read["response"])
-            if len(data) >= 3:
-                self.i2c.i2c_write([0xBB, data[1], data[2]])
-                self.reactor.pause(self.reactor.monotonic() + 0.100)
-
-        self.i2c.i2c_write([0xBE, 0x08, 0x00])  # SYS_CFG
-        self.reactor.pause(self.reactor.monotonic() + 0.100)
-
 
 def load_config(config):
     # Register sensor
@@ -278,4 +263,3 @@ def load_config(config):
     pheater.add_sensor_factory("AHT2X", AHT2x)
     pheater.add_sensor_factory("AHT3X", AHT3x)
     pheater.add_sensor_factory("AHT20_F", AHT20_F)
-
