@@ -11,7 +11,7 @@ from . import bus
 # Compatible Sensors:
 #       AHT10      -    Tested w/ BTT GTR 1.0 MCU on i2c3
 #       AHT20      -    Tested w/ N32G455 on i2c2
-#       AHT20_F    -    Tested w/ Qidi Box on i2c3
+#       AHT20F    -    Tested w/ Qidi Box on i2c3
 #       AHT21      -    Tested w/ BTT GTR 1.0 MCU on i2c3
 #       AHT30      -    Untested, but should work
 ######################################################################
@@ -206,8 +206,8 @@ class AHT3x(AHTBase):
         self.reactor.pause(self.reactor.monotonic() + 0.100)
 
 
-class AHT20_F(AHTBase):
-    model = "aht20_f"
+class AHT20F(AHTBase):
+    model = "aht20f"
     read_count = 7
 
     def _send_init(self):
@@ -237,4 +237,4 @@ def load_config(config):
     pheater.add_sensor_factory("AHT1X", AHT1x)
     pheater.add_sensor_factory("AHT2X", AHT2x)
     pheater.add_sensor_factory("AHT3X", AHT3x)
-    pheater.add_sensor_factory("AHT20_F", AHT20_F)
+    pheater.add_sensor_factory("AHT20F", AHT20F)
